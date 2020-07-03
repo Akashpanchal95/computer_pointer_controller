@@ -2,6 +2,7 @@
 __Author__: Akash Panchal
 """
 import argparse
+import logging
 
 import cv2
 from face_detection import FaceDetection
@@ -49,9 +50,14 @@ def parse_args():
                         type=str,
                         help='path to the gaze estimation model')
 
-    parser.add_argument('--visualize',
+    parser.add_argument('--show_result',
                         default=True,
-                        action='store_true',
+                        type=bool,
+                        help='visualize the model output')
+
+    parser.add_argument('--visualize',
+                        default=False,
+                        type=bool,
                         help='visualize the model output')
 
     parser.add_argument('--output_dir',
@@ -59,18 +65,35 @@ def parse_args():
                         type=str,
                         help='output directory to save video results')
 
+    parser.add_argument('--log-level',
+                        default='error',
+                        type=str,
+                        choices=['debug', 'info', 'warning', 'error'],
+                        help='the log level, one of debug, info, warning, error, critical')
+
     args = parser.parse_args()
     return args
 
 
 def main(args):
+    # set log level
+    levels = {'debug': logging.DEBUG,
+              'info': logging.INFO,
+              'warning': logging.WARNING,
+              'error': logging.ERROR}
+
+    log_level = levels.get(args.log_level, logging.ERROR)
+
+    logging.basicConfig(level=log_level)
 
     mouse_control = MouseController('high', 'fast')
 
+    logging.info("Model Loading Please Wait ..")
     face_det = FaceDetection(args.face_detection, args.device)
     facial_det = FaceLandmark(args.face_landmark, args.device)
     head_pose_est = HeadPoseEstimation(args.head_pose, args.device)
     gaze_est = GazeEstimation(args.gaze_estimation, args.device)
+    logging.info("Model loading successfully")
 
     inp = InputFeeder(input_type='video', input_file=args.input)
     inp.load_data()
@@ -80,7 +103,7 @@ def main(args):
     head_pose_est.load_model()
     gaze_est.load_model()
 
-    video_writer = cv2.VideoWriter(args.output_dir + '/demo_output.mp4', cv2.VideoWriter_fourcc(*'MPEG'), 15,
+    video_writer = cv2.VideoWriter(args.output_dir + '/demo_output11.mp4', cv2.VideoWriter_fourcc(*'MPEG'), 15,
                                    (1920, 1080), True)
 
     cv2.namedWindow('gaze')
@@ -92,7 +115,8 @@ def main(args):
         crop_face, crop_coords = face_det.predict(frame, visualize=args.visualize)
 
         left_eye, right_eye, left_eye_crop, right_eye_crop = facial_det.predict(crop_face, visualize=args.visualize)
-        head_pose = head_pose_est.predict(crop_face, frame, visualize=args.visualize)
+        head_pose = head_pose_est.predict(crop_face, visualize=args.visualize)
+
         (new_x, new_y), gaze_vector = gaze_est.predict(left_eye_crop, right_eye_crop, head_pose)
 
         left_eye_gaze = int(left_eye[0] + gaze_vector[0] * 100), int(left_eye[1] - gaze_vector[1] * 100)
@@ -103,8 +127,10 @@ def main(args):
 
         video_writer.write(frame)
         mouse_control.move(new_x, new_y)
-        cv2.imshow('gaze', frame)
-        cv2.waitKey(1)
+
+        if args.show_result:
+            cv2.imshow('gaze', frame)
+            cv2.waitKey(1)
 
     inp.close()
     video_writer.release()

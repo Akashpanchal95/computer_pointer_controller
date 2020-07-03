@@ -79,10 +79,24 @@ python <openvino-installation-path>/deployment_tools/tools/model_downloader/down
 ```
 python src/main.py
 ```
+Run individual model 
+##### Without Visualization
+```
+python face_detection.py --face_detection model_name --device device_name 
+```
+##### With Visualization
+```
+python face_detection.py --visualize True
+```
+##### For more details
+```
+python main.py --help
+```
 
+Note: To run different model, I have added top of code for how to run that file.
 ## Documentation
 Main file arguments:
-
+    
     parser.add_argument('--input',
                         default='../bin/demo.mp4',
                         type=str,
@@ -134,11 +148,11 @@ Main file arguments:
 Processor Details: Intel(R) Core(TM) i5-7400 CPU @ 3.00GHz
 
 <p align="center">
-<img src="output/fp16_32_cpu.png">
+<img src="output/fp16_32_cpu.png" width=400px height=350px>
 </p>
 <br>
 <p align="center">
-<img src="output/fp16_32_gpu.png">
+<img src="outpt/fp16_32_gpu.png" width=400px height=350px>
 </p>
 
 

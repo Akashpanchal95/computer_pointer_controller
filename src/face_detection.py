@@ -3,7 +3,11 @@ This is a sample class for a model. You may choose to use it as-is or make any c
 This has been provided just to give you an idea of how to structure your model class.
 
 How to run :
+Without viewing result
 python face_detection.py
+
+With Show result
+python face_detection.py --visualize Tru
 
 """
 
@@ -11,8 +15,10 @@ import os
 import time
 import cv2
 import numpy as np
+import logging
 
 from openvino.inference_engine import IENetwork, IECore
+
 
 class FaceDetection:
     """
@@ -49,20 +55,22 @@ class FaceDetection:
             not_supported_layers = [layer for layer in self.net.layers.keys() if layer not in supported_layers]
 
             if len(not_supported_layers) != 0 and self.device == 'CPU':
+                logging.error(f"Unsupported layers: {not_supported_layers}")
                 print(f"Not supported layers: {not_supported_layers}")
 
         # Load model in network
         start_time = time.time()
         self.exec_net = self.plugin.load_network(network=self.net, device_name=self.device, num_requests=1)
+        end_time = time.time()
 
         # Obtain blob info from network
         self.input_blob = next(iter(self.net.inputs))
         self.out_blob = next(iter(self.net.outputs))
 
-        end_time = time.time()
         print(f"Face Detection Model Loading Time: {end_time - start_time}")
+        logging.info(f"Face Detection Model Loading Time: {end_time - start_time}")
 
-    def predict(self, image, visualize=False):
+    def predict(self, image, visualize):
         """
         TODO: You will need to complete this method.
         This method is meant for running predictions on the input image.
@@ -75,22 +83,27 @@ class FaceDetection:
         coords = self.preprocess_output(outputs)
 
         if len(coords) == 0:
+            logging.warning("No face found in video or image")
             return 0, 0
+
         coords = coords[0]  # take the first detected face
-        h = image.shape[0]
-        w = image.shape[1]
-        coords = coords * np.array([w, h, w, h])
+        height = image.shape[0]
+        width = image.shape[1]
+        coords = coords * np.array([width, height, width, height])
         coords = coords.astype(np.int32)
 
         cropped_face = image[coords[1]:coords[3], coords[0]:coords[2]]
+        cv2.rectangle(image, (coords[0], coords[1]), (coords[2], coords[3]), (255, 12, 12), 2)
 
-        if visualize is True:
+        if visualize:
+
             # Save Image
-            #cv2.imwrite('../output/face_detection1.jpg', cropped_face)
-            cv2.rectangle(image, (coords[0], coords[1]), (coords[2], coords[3]), (255, 12, 12), 2)
-            # cv2.imshow("Face detected", image)
-            # cv2.waitKey(1)
-
+            # cv2.imwrite('../output/face_detection1.jpg', cropped_face)
+            # cv2.rectangle(image, (coords[0], coords[1]), (coords[2], coords[3]), (255, 12, 12), 2)
+            cv2.imshow("Face detected", image)
+            cv2.waitKey(0)
+        else:
+            logging.info("Visualization is off so image is not visible")
         return cropped_face, coords
 
     def preprocess_input(self, image):
@@ -111,6 +124,7 @@ class FaceDetection:
         """
         coords = []
         outs = outputs[self.out_blob][0][0]
+        logging.info(f"Total {len(outs)} face found")
         for out in outs:
             confidence = out[2]
             if confidence > 0.5:  # args.threshold:
@@ -119,6 +133,7 @@ class FaceDetection:
                 x_max = out[5]
                 y_max = out[6]
                 coords.append([x_min, y_min, x_max, y_max])
+            logging.info(f"Face coordinate: {coords}")
 
         return coords
 
@@ -145,6 +160,11 @@ if __name__ == '__main__':
                         choices=['CPU', 'GPU', 'FPGA', 'MYRIAD'],
                         help='Choose device to run inference from CPU, GPU, MYRIAD, FPGA')
 
+    parser.add_argument('--visualize',
+                        default=False,
+                        type=bool,
+                        help='visualize the model output')
+
     parser.add_argument('--threshold',
                         default=0.5,
                         type=int)
@@ -157,8 +177,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     # Read Image from given input
+    logging.info(f"Reading Image {args.input}")
     image = cv2.imread(args.input)
-
     FD = FaceDetection(args.face_detection, args.device)
     FD.load_model()
-    crop_face, coords = FD.predict(image, visualize=True)
+    crop_face, coords = FD.predict(image, args.visualize)

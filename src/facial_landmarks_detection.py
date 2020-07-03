@@ -3,7 +3,11 @@ This is a sample class for a model. You may choose to use it as-is or make any c
 This has been provided just to give you an idea of how to structure your model class.
 
 How to run :
-python face_detection.py
+Without viewing result
+python facial_landmarks_detection.py
+
+With Show result
+python facial_landmarks_detection.py --visualize True
 
 """
 
@@ -11,10 +15,9 @@ import os
 import time
 import cv2
 import numpy as np
+import logging
 
 from openvino.inference_engine import IENetwork, IECore
-
-SHOW = True
 
 
 class FaceLandmark:
@@ -53,30 +56,32 @@ class FaceLandmark:
 
             if len(not_supported_layers) != 0 and self.device == 'CPU':
                 print(f"Not supported layers: {not_supported_layers}")
+                logging.error(f"Unsupported layers: {not_supported_layers}")
 
         # Load model in network
         start_time = time.time()
         self.exec_net = self.plugin.load_network(network=self.net, device_name=self.device, num_requests=1)
+        end_time = time.time()
 
         # Obtain blob info from network
         self.input_blob = next(iter(self.net.inputs))
         self.out_blob = next(iter(self.net.outputs))
 
-        end_time = time.time()
         print(f"Face Landmark Model Loading Time: {end_time - start_time}")
+        logging.info(f"Face Landmark Model Loading Time: {end_time - start_time}")
 
     def predict(self, image, visualize=False):
         """
         TODO: You will need to complete this method.
         This method is meant for running predictions on the input image.
         """
-        org_img = image.copy()
         preprocessed_image = self.preprocess_input(image)
         # infer image
         outputs = self.exec_net.infer({self.input_blob: preprocessed_image})
 
         coords = self.preprocess_output(outputs)
         if len(coords) == 0:
+            logging.error("No coordinate found from face")
             return 0, 0, 0, 0
 
         h = image.shape[0]
@@ -114,21 +119,21 @@ class FaceLandmark:
         # print(left_eye_dimensions[0], left_eye_dimensions[1],
         #       left_eye_dimensions[2], left_eye_dimensions[3])
 
-        if visualize is True:
-            image = cv2.circle(image, (coords[0], coords[1]), 3, 255, -1)
-            image = cv2.circle(image, (coords[2], coords[3]), 3, 255, -1)
+        image = cv2.circle(image, (coords[0], coords[1]), 3, 255, -1)
+        image = cv2.circle(image, (coords[2], coords[3]), 3, 255, -1)
 
-            cv2.rectangle(image, (right_eye_dimensions[2], right_eye_dimensions[0]),
-                          (right_eye_dimensions[3], right_eye_dimensions[1]), (255, 255, 0))
+        cv2.rectangle(image, (right_eye_dimensions[2], right_eye_dimensions[0]),
+                      (right_eye_dimensions[3], right_eye_dimensions[1]), (255, 255, 0))
 
-            cv2.rectangle(image, (left_eye_dimensions[2], left_eye_dimensions[0]),
-                          (left_eye_dimensions[3], left_eye_dimensions[1]), (255, 255, 0))
+        cv2.rectangle(image, (left_eye_dimensions[2], left_eye_dimensions[0]),
+                      (left_eye_dimensions[3], left_eye_dimensions[1]), (255, 255, 0))
 
+        if visualize:
             # Show the crop image,right_eye_crop,left_eye_crop
             # cv2.imshow("Right", right_eye_crop)
             # cv2.imshow("Left", left_eye_crop)
-            # cv2.imshow("Face Landmark", image)
-            # cv2.waitKey(1)
+            cv2.imshow("Face Landmark", image)
+            cv2.waitKey(0)
 
         return left_eye, right_eye, left_eye_crop, right_eye_crop
 
@@ -171,7 +176,7 @@ if __name__ == '__main__':
     parser.add_argument('--input',
                         default='../bin/modi.jpg',
                         type=str,
-                        help=' Please give the crop ')
+                        help='path of input image')
 
     parser.add_argument('--face_landmark',
                         default='../models/intel/landmarks-regression-retail-0009/'
@@ -191,9 +196,10 @@ if __name__ == '__main__':
                         choices=['CPU', 'GPU', 'FPGA', 'MYRIAD'],
                         help='Choose device to run inference from CPU, GPU, MYRIAD, FPGA')
 
-    parser.add_argument('--threshold',
-                        default=0.5,
-                        type=int)
+    parser.add_argument('--visualize',
+                        default=False,
+                        type=bool,
+                        help='visualize the model output')
 
     parser.add_argument('--output',
                         default='output',
@@ -202,16 +208,16 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    from face_detection import FaceDetection
+
     # Read Image from given input
     image = cv2.imread(args.input)
 
-    from face_detection import FaceDetection
 
-    print(args.face_detection)
     FD = FaceDetection(args.face_detection, args.device)
     FD.load_model()
-    crop_face, coords = FD.predict(image, visualize=True)
+    crop_face, coords = FD.predict(image, visualize=args.visualize)
 
     FL = FaceLandmark(args.face_landmark, args.device)
     FL.load_model()
-    image = FL.predict(crop_face, visualize=True)
+    image = FL.predict(crop_face, visualize=args.visualize)

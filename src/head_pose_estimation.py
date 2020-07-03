@@ -3,17 +3,20 @@ This is a sample class for a model. You may choose to use it as-is or make any c
 This has been provided just to give you an idea of how to structure your model class.
 
 How to run :
-python face_detection.py
+Without viewing result
+python head_pose_estimation.py
 
+With Show result
+python head_pose_estimation.py --visualize True
 """
 
 import os
 import time
-import cv2
+import logging
 from math import cos, sin
 
+import cv2
 import numpy as np
-
 from openvino.inference_engine import IENetwork, IECore
 
 
@@ -53,19 +56,21 @@ class HeadPoseEstimation:
 
             if len(not_supported_layers) != 0 and self.device == 'CPU':
                 print(f"Not supported layers: {not_supported_layers}")
+                logging.error(f"Unsupported layers: {not_supported_layers}")
 
         # Load model in network
         start_time = time.time()
         self.exec_net = self.plugin.load_network(network=self.net, device_name=self.device, num_requests=1)
+        end_time = time.time()
 
         # Obtain blob info from network
         self.input_blob = next(iter(self.net.inputs))
         self.out_blob = next(iter(self.net.outputs))
 
-        end_time = time.time()
-        print(f"Model Loading Time: {end_time - start_time}")
+        print(f"Head Pose Model Loading Time: {end_time - start_time}")
+        logging.info(f"Head Pose Model Loading Time: {end_time - start_time}")
 
-    def predict(self, crop_face, image, visualize=False):
+    def predict(self, image, visualize=False):
         """
         TODO: You will need to complete this method.
         This method is meant for running predictions on the input image.
@@ -97,16 +102,13 @@ class HeadPoseEstimation:
         x3 = size * (sin(yaw)) + tdx
         y3 = size * (-cos(yaw) * sin(pitch)) + tdy
 
-        # cv2.line(image, (int(tdx), int(tdy)), (int(x1), int(y1)), (0, 0, 255), 3)
-        # cv2.line(image, (int(tdx), int(tdy)), (int(x2), int(y2)), (0, 255, 0), 3)
-        # cv2.line(image, (int(tdx), int(tdy)), (int(x3), int(y3)), (255, 0, 0), 2)
+        cv2.line(image, (int(tdx), int(tdy)), (int(x1), int(y1)), (0, 0, 255), 3)
+        cv2.line(image, (int(tdx), int(tdy)), (int(x2), int(y2)), (0, 255, 0), 3)
+        cv2.line(image, (int(tdx), int(tdy)), (int(x3), int(y3)), (255, 0, 0), 2)
 
-        if visualize is True:
-            cv2.line(image, (int(tdx), int(tdy)), (int(x1), int(y1)), (0, 0, 255), 3)
-            cv2.line(image, (int(tdx), int(tdy)), (int(x2), int(y2)), (0, 255, 0), 3)
-            cv2.line(image, (int(tdx), int(tdy)), (int(x3), int(y3)), (255, 0, 0), 2)
-            # cv2.imshow("HEAD POSE", image)
-            # cv2.waitKey(1)
+        if visualize:
+            cv2.imshow("HEAD POSE", image)
+            cv2.waitKey(0)
 
         return angle_outputs
 
@@ -139,9 +141,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Face detection and save crop image')
 
     parser.add_argument('--input',
-                        # default='../bin/modi.jpg',
-                        default='../output/face_detection1.jpg',
-
+                        default='../bin/modi.jpg',
                         type=str,
                         help='open image file and detect face')
 
@@ -151,15 +151,22 @@ if __name__ == '__main__':
                         type=str,
                         help='path to the face detection model')
 
+    parser.add_argument('--face_detection',
+                        default='../models/intel/face-detection-adas-binary-0001/'
+                                'FP32-INT1/face-detection-adas-binary-0001.xml',
+                        type=str,
+                        help='path to the face detection model')
+
     parser.add_argument('--device',
                         default='CPU',
                         type=str,
                         choices=['CPU', 'GPU', 'FPGA', 'MYRIAD'],
                         help='Choose device to run inference from CPU, GPU, MYRIAD, FPGA')
 
-    parser.add_argument('--threshold',
-                        default=0.5,
-                        type=int)
+    parser.add_argument('--visualize',
+                        default=False,
+                        type=bool,
+                        help='visualize the model output')
 
     parser.add_argument('--output',
                         default='output',
@@ -168,9 +175,20 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    from face_detection import FaceDetection
+
     # Read Image from given input
     image = cv2.imread(args.input)
+    logging.info(f"Reading Image {args.input}")
+
+    FD = FaceDetection(args.face_detection, args.device)
+    FD.load_model()
+    crop_face, coords = FD.predict(image, visualize=args.visualize)
+
+    if coords is 0:
+        logging.warning(f"Face not found from image :{args.input}")
+        exit()
 
     HPE = HeadPoseEstimation(args.head_pose, args.device)
     HPE.load_model()
-    image = HPE.predict(image)
+    image = HPE.predict(crop_face, args.visualize)

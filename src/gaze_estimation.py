@@ -3,14 +3,18 @@ This is a sample class for a model. You may choose to use it as-is or make any c
 This has been provided just to give you an idea of how to structure your model class.
 
 How to run :
-python face_detection.py
+Without viewing result
+python gaze_estimation.py
 
+With Show result
+python gaze_estimation.py --visualize True
 """
 
 import os
 import time
 import cv2
 import math
+import logging
 
 from openvino.inference_engine import IENetwork, IECore
 
@@ -51,17 +55,19 @@ class GazeEstimation:
 
             if len(not_supported_layers) != 0 and self.device == 'CPU':
                 print(f"Not supported layers: {not_supported_layers}")
+                logging.error(f"Unsupported layers: {not_supported_layers}")
 
         # Load model in network
         start_time = time.time()
         self.exec_net = self.plugin.load_network(network=self.net, device_name=self.device, num_requests=1)
+        end_time = time.time()
 
         # Obtain blob info from network
         self.input_blob = next(iter(self.net.inputs))
         self.out_blob = next(iter(self.net.outputs))
 
-        end_time = time.time()
         print(f"Gaze Estimation Model Loading Time: {end_time - start_time}")
+        logging.info(f"Gaze Estimation Model Loading Time: {end_time - start_time}")
 
     def predict(self, left_eye, right_eye, head_pose):
         """
@@ -93,8 +99,7 @@ class GazeEstimation:
             preprocessed_left_image = preprocessed_left_image.reshape(1, 3, 60, 60)
             preprocessed_right_image = preprocessed_right_image.reshape(1, 3, 60, 60)
         except:
-            # print("Left Eye",left_eye.shape)
-            # print("Right Eye",right_eye.shape)
+            logging.warning(f"eye image is in wrong shape Left Eye:{left_eye.shape} Right Eye :{right_eye.shape}")
             return 0, 0
 
         return preprocessed_left_image, preprocessed_right_image
@@ -127,9 +132,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Face detection and save crop image')
 
     parser.add_argument('--input',
-                        default='../bin/das.jpg',
-                        # default='../output/face_detection.jpg',
-
+                        # default='../bin/modi.jpg',
+                        default="/home/dev2/Figure_1.png",
                         type=str,
                         help='open image file and detect face')
 
@@ -157,15 +161,16 @@ if __name__ == '__main__':
                         type=str,
                         help='path to the face detection model')
 
+    parser.add_argument('--visualize',
+                        default=False,
+                        action='store_true',
+                        help='visualize the model output')
+
     parser.add_argument('--device',
                         default='CPU',
                         type=str,
                         choices=['CPU', 'GPU', 'FPGA', 'MYRIAD'],
                         help='Choose device to run inference from CPU, GPU, MYRIAD, FPGA')
-
-    parser.add_argument('--threshold',
-                        default=0.5,
-                        type=int)
 
     parser.add_argument('--output',
                         default='output',
@@ -174,37 +179,41 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    # Read Image from given input
-    image = cv2.imread(args.input)
-
     from head_pose_estimation import HeadPoseEstimation
     from facial_landmarks_detection import FaceLandmark
     from face_detection import FaceDetection
 
+    # Read Image from given input
+    image = cv2.imread(args.input)
+    logging.info(f"Reading Image {args.input}")
+
     FD = FaceDetection(args.face_detection, args.device)
     FD.load_model()
-    crop_face, coords = FD.predict(image, visualize=True)
+    crop_face, coords = FD.predict(image, visualize=args.visualize)
+
+    if coords is 0:
+        logging.warning("face not found from image")
+        exit()
 
     FL = FaceLandmark(args.face_landmark, args.device)
     FL.load_model()
-    left_eye, right_eye, left_eye_crop, right_eye_crop = FL.predict(crop_face, visualize=True)
+    left_eye, right_eye, left_eye_crop, right_eye_crop = FL.predict(crop_face, visualize=args.visualize)
 
-    HE = HeadPoseEstimation(args.heas_pose, args.device)
+    HE = HeadPoseEstimation(args.head_pose, args.device)
     HE.load_model()
-    HPE = HE.predict(crop_face, image)
+    HPE = HE.predict(crop_face, args.visualize)
 
     GE = GazeEstimation(args.gaze_estimation, args.device)
     GE.load_model()
 
-    (newx, newy), gaze_vector = GE.predict(left_eye_crop, right_eye_crop, HPE)
+    (new_x, new_y), gaze_vector = GE.predict(left_eye_crop, right_eye_crop, HPE)
 
-    (left_eye_gaze) = int(left_eye[0] + gaze_vector[0] * 100), int(left_eye[1] - gaze_vector[1] * 100)
-    # newx_l, newy_l,
-    (right_eye_gaze) = int(right_eye[0] + gaze_vector[0] * 100), int(right_eye[1] - gaze_vector[1] * 100)
-    # newx_r, newy_r
+    left_eye_gaze = int(left_eye[0] + gaze_vector[0] * 100), int(left_eye[1] - gaze_vector[1] * 100)
+    right_eye_gaze = int(right_eye[0] + gaze_vector[0] * 100), int(right_eye[1] - gaze_vector[1] * 100)
 
-    frame = cv2.arrowedLine(crop_face, (right_eye), (left_eye_gaze), (0, 0, 255), 2)
-    frame = cv2.arrowedLine(crop_face, (left_eye), (right_eye_gaze), (255, 0, 0), 2)
+    cv2.arrowedLine(crop_face, left_eye, left_eye_gaze, (0, 0, 255), 2)
+    cv2.arrowedLine(crop_face, right_eye, right_eye_gaze, (0, 0, 255), 2)
 
-    cv2.imshow("gaze", image)
-    cv2.waitKey(0)
+    if args.visualize:
+        cv2.imshow("Eye gaze", image)
+        cv2.waitKey(0)
