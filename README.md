@@ -134,11 +134,11 @@ Main file arguments:
 Processor Details: Intel(R) Core(TM) i5-7400 CPU @ 3.00GHz
 
 <p align="center">
-<img src="output/fp16_32_cpu.png" width=400px height=350px>
+<img src="output/fp16_32_cpu.png">
 </p>
 <br>
 <p align="center">
-<img src="output/fp16_32_gpu.png" width=400px height=350px>
+<img src="output/fp16_32_gpu.png">
 </p>
 
 
